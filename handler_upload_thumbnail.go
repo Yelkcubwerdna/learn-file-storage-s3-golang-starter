@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -49,11 +51,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	mediaType := header.Header.Get("Content-Type")
 
-	imageData, err := io.ReadAll(file)
+	/*imageData, err := io.ReadAll(file)
 	if err != nil {
 		respondWithError(w, 500, "Couldn't read file", err)
 		return
-	}
+	}*/
 
 	dbVideo, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -67,23 +69,31 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Make a new thumbnail struct with data
-	//newThumbnail := thumbnail{
-	//	data:      imageData,
-	//	mediaType: mediaType,
-	//}
+	// Strip prefix
+	fileExtension, ok := strings.CutPrefix(mediaType, "image/")
+	if !ok {
+		respondWithError(w, 500, "File doesn't have 'image/' prefix", nil)
+		return
+	}
 
-	// Convert the image data to a string
-	imageString := base64.StdEncoding.EncodeToString(imageData)
+	// Create file path
+	filePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, fileExtension))
+
+	// Create new file
+	newFile, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("Couldn't create new file: %v", filePath), err)
+		return
+	}
+
+	// Copy the multipart.File to the new file
+	io.Copy(newFile, file)
 
 	// Create dataUrl for image
-	dataUrl := fmt.Sprintf("data:%s;base64,%s", mediaType, imageString)
-
-	// Make thumbnail url
-	//thumbnailUrl := fmt.Sprintf("http://localhost:8091/api/thumbnails/{%v}", videoID)
+	ThumbnailURL := fmt.Sprintf("http://localhost:8091/assets/%s.%s", videoIDString, fileExtension)
 
 	// Update thumbnail URL
-	dbVideo.ThumbnailURL = &dataUrl
+	dbVideo.ThumbnailURL = &ThumbnailURL
 
 	// Update video in database
 	err = cfg.db.UpdateVideo(dbVideo)
