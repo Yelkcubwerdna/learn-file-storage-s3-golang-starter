@@ -88,6 +88,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	// Copy file to tempfile
 	io.Copy(tempFile, file)
 
+	// Determine video's aspect ratio
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, 500, "Couldn't determine aspect ratio", err)
+		return
+	}
+
 	// Reset tempFile's file pointer to beginning
 	_, err = tempFile.Seek(0, io.SeekStart)
 	if err != nil {
@@ -104,11 +111,36 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	fileKey := fmt.Sprintf("%s.%s", hex.EncodeToString(randombytes), "mp4")
 
+	// Add prefix to key based on aspect ration
+	switch aspectRatio {
+	case "16:9":
+		fileKey = fmt.Sprintf("landscape/%s", fileKey)
+	case "9:16":
+		fileKey = fmt.Sprintf("portrait/%s", fileKey)
+	case "other":
+		fileKey = fmt.Sprintf("other/%s", fileKey)
+	default:
+		respondWithError(w, 500, fmt.Sprintf("Aspect ratio didn't fit any type: %s", aspectRatio), nil)
+		return
+	}
+
+	// Get processed version of video for fast start
+	processedFilePath, err := processVideoForFastStart(tempFile.Name())
+
+	// Open processed file
+	processedFile, err := os.Open(processedFilePath)
+	if err != nil {
+		respondWithError(w, 500, "Couldn't open processed file", err)
+		return
+	}
+	defer processedFile.Close()
+	defer os.Remove(processedFilePath)
+
 	// Put the object into S3
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileKey,
-		Body:        tempFile,
+		Body:        processedFile,
 		ContentType: &mediaType,
 	})
 	if err != nil {
