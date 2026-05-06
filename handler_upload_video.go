@@ -148,8 +148,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update VideoURL to S3 URL
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileKey)
+	// Update VideoURL with CDN domain
+	videoURL := fmt.Sprintf("%s/%s", cfg.s3CfDistribution, fileKey)
 	dbVideo.VideoURL = &videoURL
 
 	// Update in database
@@ -158,7 +158,6 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, 500, "Error updating database", err)
 		return
 	}
-
 	// Confirmation
 	respondWithJSON(w, http.StatusOK, dbVideo)
 }
